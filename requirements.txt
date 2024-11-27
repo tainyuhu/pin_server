@@ -1,0 +1,12 @@
+﻿celery==5.3.6
+Django==4.2.11
+django-celery-beat==2.5.0
+django-celery-results==2.5.1
+django-cors-headers==4.3.1
+django-filter==23.5
+django-simple-history==3.4.0
+djangorestframework==3.14.0
+djangorestframework-simplejwt==5.3.1
+drf-yasg==1.21.7
+psutil==5.9.6
+redis==5.0.1
