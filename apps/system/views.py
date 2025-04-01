@@ -1,5 +1,5 @@
 import logging
-
+from django.shortcuts import get_object_or_404
 from django.conf import settings
 from django.contrib.auth.hashers import check_password, make_password
 from django.core.cache import cache
@@ -20,12 +20,13 @@ from rest_framework.views import APIView
 from rest_framework.viewsets import GenericViewSet, ModelViewSet
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework.exceptions import ValidationError, ParseError
+from apps.line_bot.models import LineUser
 from utils.queryset import get_child_queryset2
 
 from .filters import UserFilter
 from .mixins import CreateUpdateModelAMixin, OptimizationMixin
 from .models import (Dict, DictType, File, Organization, Permission, Position,
-                     Role, User)
+                     Role, User, VerificationCode)
 from .permission import RbacPermission, get_permission_list
 from .permission_data import RbacFilterSet
 from .serializers import (DictSerializer, DictTypeSerializer, FileSerializer,
@@ -34,6 +35,12 @@ from .serializers import (DictSerializer, DictTypeSerializer, FileSerializer,
                           UserCreateSerializer, UserListSerializer,
                           UserModifySerializer)
 from django.db.models import Count
+from django.db import transaction 
+from django.contrib.auth.hashers import check_password
+from datetime import timedelta
+from django.utils import timezone
+import random
+
 
 
 logger = logging.getLogger('log')
@@ -41,6 +48,57 @@ logger = logging.getLogger('log')
 # logger.error('请求出错-{}'.format(error))
 
 from server.celery import app as celery_app
+
+
+from rest_framework_simplejwt.views import TokenObtainPairView
+from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
+from rest_framework import status
+from rest_framework.response import Response
+from django.contrib.auth.hashers import check_password
+from django.contrib.auth import get_user_model
+
+class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
+    def validate(self, attrs):
+        # 檢查使用者名稱和密碼
+        User = get_user_model()
+        try:
+            user = User.objects.get(username=attrs.get('username'))
+        except User.DoesNotExist:
+            raise serializers.ValidationError({
+                'error': 'No active account found with the given credentials'
+            })
+        
+        # 檢查密碼哈希是否正確
+        if not check_password(attrs.get('password'), user.password):
+            raise serializers.ValidationError({
+                'error': 'Invalid password'
+            })
+        
+        # 如果通過所有驗證,生成 token
+        data = super().validate(attrs)
+        
+        # 檢查是否為預設密碼，並添加標記
+        data['username'] = self.user.username
+        data['user_id']= self.user.id
+        data['need_change_password'] = (attrs.get('password') == 'sunny6688')
+        
+        return data
+
+class CustomTokenObtainPairView(TokenObtainPairView):
+    serializer_class = CustomTokenObtainPairSerializer
+    
+    def post(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        
+        try:
+            serializer.is_valid(raise_exception=True)
+        except Exception as e:
+            return Response(
+                {'error': str(e)},
+                status=status.HTTP_401_UNAUTHORIZED
+            )
+        return Response(serializer.validated_data, status=status.HTTP_200_OK)
+
 class TaskList(APIView):
     permission_classes = ()
 
@@ -359,7 +417,7 @@ class UserViewSet(ModelViewSet):
         """
         創建用戶
         """
-        password = request.data.get('password', '0000')
+        password = request.data.get('password', 'sunny6688')
         role_ids = request.data.get('roles', [])
 
         serializer = self.get_serializer(data=request.data)
@@ -377,7 +435,7 @@ class UserViewSet(ModelViewSet):
             url_name='change_password')
     def password(self, request, pk=None):
         """
-        修改密码
+        修改密碼
         """
         user = request.user
         old_password = request.data['old_password']
@@ -392,6 +450,50 @@ class UserViewSet(ModelViewSet):
                 return Response('新密碼兩次輸入不一致!', status=status.HTTP_400_BAD_REQUEST)
         else:
             return Response('舊密碼錯誤!', status=status.HTTP_400_BAD_REQUEST)
+        
+    @action(methods=['put'], detail=False, url_path='reset', permission_classes=[])
+    def reset_password(self, request):
+        """重設密碼"""
+        employee_id = request.data.get('employeeId')
+        new_password = request.data.get('new_password')
+        
+        if not employee_id or not new_password:
+            return Response({
+                'success': False,
+                'message': '請提供完整資料'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        try:
+            user = User.objects.get(username=employee_id)
+            
+            # 檢查是否有通過驗證的驗證碼記錄
+            valid_verification = VerificationCode.objects.filter(
+                employee=user,
+                is_used=True,
+                is_expired=False,
+                create_time__gte=timezone.now() - timedelta(minutes=10)  # 驗證成功後的有效重設時間
+            ).exists()
+            
+            if not valid_verification:
+                return Response({
+                    'success': False,
+                    'message': '請先進行驗證碼驗證'
+                }, status=status.HTTP_400_BAD_REQUEST)
+            
+            # 重設密碼
+            user.set_password(new_password)
+            user.save()
+            
+            return Response({
+                'success': True,
+                'message': '密碼重設成功'
+            })
+            
+        except User.DoesNotExist:
+            return Response({
+                'success': False,
+                'message': '找不到該員工編號'
+            }, status=status.HTTP_404_NOT_FOUND)
 
     # perms_map={'get':'*'}, 自定义action控权
     @action(methods=['get'], detail=False, url_name='my_info', permission_classes=[IsAuthenticated])
@@ -410,6 +512,33 @@ class UserViewSet(ModelViewSet):
             'perms': perms,
         }
         return Response(data)
+    
+    @action(methods=['get'], detail=False, url_name='check_line_binding')
+    def check_line_binding(self, request):
+        """
+        檢查用戶是否綁定 LINE 帳號
+        """
+        username = request.query_params.get('username')
+        if not username:
+            return Response({
+                'message': '請提供工號'
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        # 查找用戶
+        user = get_object_or_404(User, username=username)
+        
+        try:
+            # 檢查是否有對應的 LINE 綁定
+            line_user = LineUser.objects.get(id=user.line_id)
+            return Response({
+                'has_line': True,
+                'line_user_id': line_user.line_user_id
+            })
+        except LineUser.DoesNotExist:
+            return Response({
+                'has_line': False,
+                'line_user_id': None
+            })
 
 class FileViewSet(CreateModelMixin, DestroyModelMixin, RetrieveModelMixin, ListModelMixin, GenericViewSet):
     """
@@ -441,3 +570,117 @@ class FileViewSet(CreateModelMixin, DestroyModelMixin, RetrieveModelMixin, ListM
         instance = serializer.save(create_by = self.request.user, name=name, size=size, type=type, mime=mime)
         instance.path = settings.MEDIA_URL + instance.file.name
         instance.save()
+
+class ResetPasswordViewSet(ModelViewSet):
+    @action(methods=['post'], detail=False, url_path='send-code', permission_classes=[])
+    def send_code(self, request):
+        """發送驗證碼到 LINE"""
+        employee_id = request.data.get('employeeId')
+        
+        if not employee_id:
+            return Response({
+                'success': False,
+                'message': '請提供工號'
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            # 查找用戶
+            user = User.objects.get(username=employee_id)
+            
+            # 檢查 LINE 綁定狀態
+            try:
+                line_user = LineUser.objects.get(id=user.line_id)
+            except LineUser.DoesNotExist:
+                return Response({
+                    'success': False,
+                    'message': '此帳號尚未綁定 LINE'
+                }, status=status.HTTP_400_BAD_REQUEST)
+
+            # 生成6位數驗證碼
+            verification_code = ''.join(
+                [str(random.randint(0, 9)) for _ in range(6)]
+            )
+            
+            # 建立新的驗證碼記錄
+            VerificationCode.objects.create(
+                employee=user,
+                code=verification_code,
+                expires_at=timezone.now() + timedelta(minutes=2)
+            )
+            
+            # 發送 LINE 訊息
+            line_message = f'您的重設密碼驗證碼為：{verification_code}，2分鐘內有效。'
+            # send_line_message(line_user.line_user_id, line_message)
+            
+            return Response({
+                'success': True,
+                'message': f'驗證碼已發送至您的 LINE{line_user.line_user_id}{line_message}'
+            })
+            
+        except User.DoesNotExist:
+            return Response({
+                'success': False,
+                'message': '找不到該員工編號'
+            }, status=status.HTTP_404_NOT_FOUND)
+
+    @action(methods=['post'], detail=False, url_path='verify-code', permission_classes=[])
+    def verify_code(self, request):
+        """驗證碼確認"""
+        employee_id = request.data.get('employeeId')
+        code = request.data.get('code')
+        
+        try:
+            user = User.objects.get(username=employee_id)
+            
+            # 找出此使用者所有未使用的驗證碼，並依照建立時間排序
+            all_verifications = VerificationCode.objects.filter(
+                employee=user,
+                is_used=False
+            ).order_by('-create_time')
+
+            # 找出最新的驗證碼
+            latest_verification = all_verifications.first()
+            
+            if latest_verification:
+                with transaction.atomic():
+                    # 先檢查是否過期
+                    if latest_verification.is_expired_now():
+                        latest_verification.mark_expired_if_needed()
+                        return Response({
+                            'success': False,
+                            'message': '驗證碼已過期'
+                        }, status=status.HTTP_400_BAD_REQUEST)
+                    
+                    # 檢查是否為正確的驗證碼
+                    if latest_verification.code != code:
+                        # 增加嘗試次數，如果超過限制會自動設為過期
+                        is_max_attempts = latest_verification.increase_attempt()
+                        
+                        message = '驗證碼錯誤'
+                        if is_max_attempts:
+                            message = '驗證碼已失效，嘗試次數過多'
+                            
+                        return Response({
+                            'success': False,
+                            'message': message
+                        }, status=status.HTTP_400_BAD_REQUEST)
+                    
+                    # 驗證成功，標記為已使用
+                    latest_verification.is_used = True
+                    latest_verification.save()
+                
+                return Response({
+                    'success': True,
+                    'message': '驗證成功'
+                })
+            else:
+                return Response({
+                    'success': False,
+                    'message': '沒有可用的驗證碼'
+                }, status=status.HTTP_400_BAD_REQUEST)
+            
+        except User.DoesNotExist:
+            return Response({
+                'success': False,
+                'message': '找不到該員工編號'
+            }, status=status.HTTP_404_NOT_FOUND)

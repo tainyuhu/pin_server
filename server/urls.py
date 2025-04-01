@@ -13,7 +13,7 @@ Including another URLconf
     1. Import the include() function: from django.urls import include, path
     2. Add a URL to urlpatterns:  path('blog/', include('blog.urls'))
 """
-from apps.system.views import FileViewSet, LogoutView
+from apps.system.views import CustomTokenObtainPairView, FileViewSet, LogoutView
 from django.conf import settings
 from django.conf.urls.static import static
 from django.contrib import admin
@@ -45,13 +45,14 @@ urlpatterns = [
     path('django/admin/', admin.site.urls),
 
     # api
-    path('api/token/', TokenObtainPairView.as_view(), name='token_obtain_pair'),
+    path('api/token/', CustomTokenObtainPairView.as_view(), name='token_obtain_pair'),
     path('api/token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
     path('api/token/black/', LogoutView.as_view(), name='token_black'),
     path('api/file/', include(router.urls)),
     path('api/system/', include('apps.system.urls')),
     path('api/monitor/', include('apps.monitor.urls')),
     path('api/wf/', include('apps.wf.urls')),
+    path('api/line_bot/', include('apps.line_bot.urls')),
 
     # api文档
     path('api/swagger/', schema_view.with_ui('swagger', cache_timeout=0), name='schema-swagger-ui'),

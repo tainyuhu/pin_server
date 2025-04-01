@@ -117,20 +117,26 @@ class UserSimpleSerializer(serializers.ModelSerializer):
 
 class UserListSerializer(serializers.ModelSerializer):
     """
-    用户列表序列化
+    用戶列表序列化
     """
     dept_name = serializers.StringRelatedField(source='dept')
     roles_name = serializers.StringRelatedField(source='roles', many=True)
+    
     class Meta:
         model = User
-        fields = ['id', 'name', 'phone', 'email', 'position',
-                  'username', 'is_active', 'date_joined', 'dept_name', 'dept', 'roles', 'avatar', 'roles_name']
+        fields = [
+            'id', 'name', 'phone', 'email', 'position',
+            'username', 'is_active', 'date_joined', 
+            'dept_name', 'dept', 'roles', 'avatar', 
+            'roles_name'
+        ]
 
     @staticmethod
     def setup_eager_loading(queryset):
         """ Perform necessary eager loading of data. """
-        queryset = queryset.select_related('superior','dept')
-        queryset = queryset.prefetch_related('roles',)
+        # 移除 superior
+        queryset = queryset.select_related('dept')
+        queryset = queryset.prefetch_related('roles')
         return queryset
 
 class UserModifySerializer(serializers.ModelSerializer):
@@ -176,3 +182,5 @@ class UserCreateSerializer(serializers.ModelSerializer):
         if User.objects.filter(phone=phone):
             raise serializers.ValidationError('手机号已经被注册')
         return phone
+
+
