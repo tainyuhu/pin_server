@@ -12,11 +12,14 @@ https://docs.djangoproject.com/en/3.0/ref/settings/
 
 from datetime import datetime, timedelta
 import os
+from dotenv import load_dotenv
 from . import conf_e
+
+# 強制重新加載
+load_dotenv(override=True)
 
 # Build paths inside the project like this: os.path.join(BASE_DIR, ...)
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-
 
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/3.0/howto/deployment/checklist/
@@ -50,6 +53,7 @@ INSTALLED_APPS = [
     'apps.wf',
     'apps.product',
     'apps.line_bot.apps.LineBotConfig',
+    'apps.line_login', # Line Login App
     'apps.v1'
 ]
 
@@ -179,20 +183,20 @@ AUTHENTICATION_BACKENDS = (
     'apps.system.authentication.CustomBackend',
 )
 
-# 缓存配置,使用redis
-CACHES = {
-    "default": {
-        "BACKEND": "django.core.cache.backends.redis.RedisCache",
-        "LOCATION": "redis://127.0.0.1:6379/1",
-    }
-}
+# # 缓存配置,使用redis
+# CACHES = {
+#     "default": {
+#         "BACKEND": "django.core.cache.backends.redis.RedisCache",
+#         "LOCATION": "redis://127.0.0.1:6379/1",
+#     }
+# }
 
-# celery配置,celery正常运行必须安装redis
-CELERY_BROKER_URL = "redis://localhost:6379/0"   # 任务存储
-CELERYD_MAX_TASKS_PER_CHILD = 100  # 每个worker最多执行300个任务就会被销毁，可防止内存泄露
-CELERY_TIMEZONE = 'Asia/Shanghai'  # 设置时区
-CELERY_ENABLE_UTC = True  # 启动时区设置
-CELERY_BEAT_SCHEDULER = 'django_celery_beat.schedulers:DatabaseScheduler'
+# # celery配置,celery正常运行必须安装redis
+# CELERY_BROKER_URL = "redis://localhost:6379/0"   # 任务存储
+# CELERYD_MAX_TASKS_PER_CHILD = 100  # 每个worker最多执行300个任务就会被销毁，可防止内存泄露
+# CELERY_TIMEZONE = 'Asia/Shanghai'  # 设置时区
+# CELERY_ENABLE_UTC = True  # 启动时区设置
+# CELERY_BEAT_SCHEDULER = 'django_celery_beat.schedulers:DatabaseScheduler'
 
 # swagger配置
 SWAGGER_SETTINGS = {
@@ -299,3 +303,14 @@ LINE_LOGIN_CONFIG = {
     'CALLBACK_URL': f'{BASE_URL}/api/line_bot/callback/',
     'USER_CACHE_TTL': 3600  # 用戶資料快取時間(秒)
 }
+
+
+# LineBot Webhook
+LINE_CHANNEL_ACCESS_TOKEN = os.environ.get('LINE_CHANNEL_ACCESS_TOKEN')
+LINE_CHANNEL_SECRET = os.environ.get('LINE_CHANNEL_SECRET')
+
+
+# Line Login
+LINE_LOGIN_CHANNEL_ID = os.environ.get('LINE_LOGIN_CHANNEL_ID')
+LINE_LOGIN_CHANNEL_SECRET = os.environ.get('LINE_LOGIN_CHANNEL_SECRET')
+LINE_LOGIN_CALLBACK_URL = os.environ.get('LINE_LOGIN_CALLBACK_URL')
