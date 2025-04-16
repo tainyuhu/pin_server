@@ -32,7 +32,7 @@ jobs:
               sudo apt-get update &&
               sudo apt-get install -y default-libmysqlclient-dev build-essential pkg-config &&
               cd /var/www &&
-              rm -rf marketing_server &&
+              sudo rm -rf marketing_server &&  # ✅ 加了 sudo
               git clone https://github.com/tainyuhu/pin_server.git marketing_server &&
               cd marketing_server &&
               python3 -m venv venv &&
