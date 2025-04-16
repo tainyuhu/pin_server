@@ -31,10 +31,16 @@ jobs:
               set -e
               sudo apt-get update &&
               sudo apt-get install -y default-libmysqlclient-dev build-essential pkg-config &&
+              
+              # 🔥 先刪掉舊的資料夾，再新建並調整權限
+              sudo rm -rf /var/www/marketing_server &&
+              sudo mkdir -p /var/www/marketing_server &&
+              sudo chown -R $USER:$USER /var/www/marketing_server &&
+              
               cd /var/www &&
-              sudo rm -rf marketing_server &&  # ✅ 加了 sudo
               git clone https://github.com/tainyuhu/pin_server.git marketing_server &&
               cd marketing_server &&
+              
               python3 -m venv venv &&
               source venv/bin/activate &&
               pip install -r requirements.txt &&
@@ -43,3 +49,4 @@ jobs:
               pkill gunicorn || true &&
               gunicorn config.wsgi:application --bind 127.0.0.1:8000 --daemon
             "
+
