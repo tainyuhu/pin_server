@@ -1,4 +1,4 @@
-name: Deploy Django Backend to GCP
+name: Deploy Django Backend to GCP 
 
 on:
   push:
