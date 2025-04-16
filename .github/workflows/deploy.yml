@@ -28,11 +28,14 @@ jobs:
         run: |
           gcloud compute ssh s0929834901@instance-20250416-131426 \
             --zone=us-central1-c --command="
-              cd /var/www/marketing_server &&
-              git pull origin main &&
+              cd /var/www &&
+              rm -rf marketing_server &&
+              git clone https://github.com/tainyuhu/pin_server.git marketing_server &&
+              cd marketing_server &&
               python3 -m venv venv &&
               source venv/bin/activate &&
               pip install -r requirements.txt &&
+              pip install gunicorn &&
               python manage.py migrate &&
               pkill gunicorn || true &&
               gunicorn config.wsgi:application --bind 127.0.0.1:8000 --daemon
