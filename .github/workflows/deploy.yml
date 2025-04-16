@@ -1,1 +1,39 @@
+name: Deploy Django Backend to GCP
 
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 🔄 Checkout code
+        uses: actions/checkout@v3
+
+      - name: ✅ Authenticate to Google Cloud
+        uses: google-github-actions/auth@v1
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: ☁️ Setup gcloud SDK
+        uses: google-github-actions/setup-gcloud@v1
+        with:
+          project_id: bold-vent-456911-e4
+          install_components: compute
+
+      - name: 🚀 SSH Deploy to GCP VM
+        run: |
+          gcloud compute ssh s0929834901@instance-20250416-131426 \
+            --zone=us-central1-c --command="
+              cd /var/www/marketing_server &&
+              git pull origin main &&
+              python3 -m venv venv &&
+              source venv/bin/activate &&
+              pip install -r requirements.txt &&
+              python manage.py migrate &&
+              pkill gunicorn || true &&
+              gunicorn config.wsgi:application --bind 127.0.0.1:8000 --daemon
+            "
